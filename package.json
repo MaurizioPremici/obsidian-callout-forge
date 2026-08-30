@@ -34,6 +34,7 @@
 	},
 	"license": "MIT",
 	"obsidianPlugin": {
+		"id": "callout-manager-custom",
 		"name": "Obsidian Callout Forge",
 		"minAppVersion": "1.13.0",
 		"description": "Design, save, and apply reusable callout styles directly from the context menu.",
