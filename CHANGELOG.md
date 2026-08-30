@@ -1,3 +1,20 @@
+# Version 1.2.0
+
+> [!new] Reusable Callout Styles
+> Name and save complete light/dark combinations for background, foreground, title, accent, border, opacity, border style, and corner radius.
+
+> [!new] Context Menu Workflow
+> Apply saved combinations to one callout, apply them globally by callout type, or open the visual editor directly from Live Preview and Reading View.
+
+> [!new] Icon Library
+> Choose from 20 included Lucide icons. Preset names, icon previews, favorites, recent items, search, ordering, import, and export are available in the preset library.
+
+> [!new] Safe Per-Callout Metadata
+> Individual styles use a plugin-owned metadata token while preserving the callout type, title, folding marker, nesting level, and unrelated metadata.
+
+> [!fix] Exact Colors and Favorite-First Menu
+> Saved presets now apply their exact light/dark colors at render time. New combinations can be marked as favorites while saving and appear first in the context menu.
+
 # Version 1.1.2
 
 > [!fix] Quick Fix for Obsidian 1.13  

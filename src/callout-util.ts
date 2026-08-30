@@ -9,7 +9,12 @@ import { RGB, parseColor } from '&color';
  * @returns The callout's color, or null if not valid.
  */
 export function getColorFromCallout(callout: Callout): RGB | null {
-	return parseColor(callout.color);
+	const parsed = parseColor(callout.color);
+	if (parsed != null) return parsed;
+
+	// Callout Manager historically stored colors as a comma-delimited RGB tuple.
+	// Keep accepting that persisted/API format while Obsidian 1.13 returns valid rgb(...) CSS colors.
+	return parseColor(`rgb(${callout.color})`);
 }
 
 /**

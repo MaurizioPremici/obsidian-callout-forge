@@ -1,16 +1,19 @@
 import { ButtonComponent, Setting } from 'obsidian';
 
+import { getColorFromCallout, getTitleFromCallout } from '&callout-util';
 import CalloutManagerPlugin from '&plugin';
 
 import { UIPane } from '&ui/pane';
 
 import { getSections } from '../changelog';
+import { PresetManagerModal } from '../presets/preset-manager-modal';
+import { createPreset, defaultStyleValues } from '../presets/style-presets';
 
 import { ChangelogPane } from './changelog-pane';
 import { ManageCalloutsPane } from './manage-callouts-pane';
 
 export class ManagePluginPane extends UIPane {
-	public readonly title = 'Callout Manager Settings';
+	public readonly title = 'Obsidian Callout Forge Settings';
 	private plugin: CalloutManagerPlugin;
 
 	public constructor(plugin: CalloutManagerPlugin) {
@@ -32,6 +35,47 @@ export class ManagePluginPane extends UIPane {
 				btn.setButtonText('Manage Callouts');
 				btn.onClick(() => this.nav.open(new ManageCalloutsPane(plugin)));
 			});
+
+		new Setting(containerEl)
+			.setName('Saved Color Combinations')
+			.setDesc('Create, name, reorder, import, or export reusable colors and icons.')
+			.addButton((btn) => {
+				btn.setButtonText('Manage Presets');
+				btn.onClick(() => new PresetManagerModal(plugin.app, plugin.presets.service).open());
+			});
+
+		const importedCalloutIds = Object.keys(plugin.settings.callouts.settings);
+		if (plugin.settings.presets.officialImport.completed && importedCalloutIds.length > 0) {
+			new Setting(containerEl)
+				.setName('Imported Official Settings')
+				.setDesc(
+					`${importedCalloutIds.length} customized callout type(s) were preserved from the official plugin. You can also turn their current accent colors into reusable presets.`,
+				)
+				.addButton((btn) => {
+					btn.setButtonText('Create Presets').onClick(async () => {
+						btn.setDisabled(true);
+						let created = 0;
+						for (const id of importedCalloutIds) {
+							const callout = plugin.callouts.get(id);
+							if (callout == null) continue;
+							const color = getColorFromCallout(callout);
+							if (color == null) continue;
+							const accent = `#${[color.r, color.g, color.b]
+								.map((channel) => channel.toString(16).padStart(2, '0'))
+								.join('')}`;
+							const light = defaultStyleValues('light');
+							const dark = defaultStyleValues('dark');
+							light.accent = light.border = accent;
+							dark.accent = dark.border = accent;
+							await plugin.presets.service.savePreset(
+								createPreset(`Imported ${getTitleFromCallout(callout)}`, light, dark, callout.icon),
+							);
+							created += 1;
+						}
+						btn.setButtonText(`${created} Created`);
+					});
+				});
+		}
 
 		// -----------------------------------------------------------------------------------------------------
 		// Section: Callout Detection
@@ -121,10 +165,12 @@ export class ManagePluginPane extends UIPane {
 					btn.setDisabled(true);
 
 					try {
-						await navigator.clipboard.writeText('/* Exported Styles from Obsidian Callout Manager */\n' + this.plugin.cssApplier.css)
-						btn.setButtonText("Copied!");
+						await navigator.clipboard.writeText(
+							'/* Exported Styles from Obsidian Callout Manager */\n' + this.plugin.cssApplier.css,
+						);
+						btn.setButtonText('Copied!');
 					} catch (ex) {
-						btn.setButtonText("Error");
+						btn.setButtonText('Error');
 					}
 				});
 			});

@@ -1,7 +1,15 @@
 {
-	"name": "obsidian-callout-manager",
-	"version": "1.1.2",
-	"description": "An Obsidian.md plugin that makes creating and configuring callouts easy.",
+	"name": "obsidian-callout-forge",
+	"version": "1.2.0",
+	"description": "Design, save, and apply reusable callout styles directly inside Obsidian.",
+	"homepage": "https://github.com/MaurizioPremici/obsidian-callout-forge#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/MaurizioPremici/obsidian-callout-forge.git"
+	},
+	"bugs": {
+		"url": "https://github.com/MaurizioPremici/obsidian-callout-forge/issues"
+	},
 	"type": "module",
 	"exports": {
 		"import": "./dist/api-esm.mjs",
@@ -13,16 +21,22 @@
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production && rollup -c rollup.config.mjs",
 		"format": "prettier -w src"
 	},
-	"keywords": [],
+	"keywords": [
+		"obsidian",
+		"callout",
+		"color-picker",
+		"presets",
+		"productivity"
+	],
 	"author": {
-		"name": "eth-p",
-		"url": "https://github.com/eth-p"
+		"name": "MaurizioPremici",
+		"url": "https://github.com/MaurizioPremici"
 	},
 	"license": "MIT",
 	"obsidianPlugin": {
-		"name": "Callout Manager",
+		"name": "Obsidian Callout Forge",
 		"minAppVersion": "1.13.0",
-		"description": "Easily create and customize callouts.",
+		"description": "Design, save, and apply reusable callout styles directly from the context menu.",
 		"isDesktopOnly": false
 	},
 	"dependencies": {

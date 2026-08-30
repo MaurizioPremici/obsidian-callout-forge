@@ -1,10 +1,10 @@
 {
-	"id": "callout-manager",
-	"version": "1.1.2",
-	"description": "Easily create and customize callouts.",
-	"author": "eth-p",
-	"authorUrl": "https://github.com/eth-p",
-	"name": "Callout Manager",
+	"id": "callout-forge",
+	"version": "1.2.0",
+	"description": "Design, save, and apply reusable callout styles directly from the context menu.",
+	"author": "MaurizioPremici",
+	"authorUrl": "https://github.com/MaurizioPremici",
+	"name": "Obsidian Callout Forge",
 	"minAppVersion": "1.13.0",
 	"isDesktopOnly": false
 }

@@ -14,7 +14,7 @@ type ObsidianAppWithPlugins = App & {
 	};
 };
 
-export const PLUGIN_ID = 'callout-manager';
+export const PLUGIN_ID = 'callout-manager-custom';
 export const PLUGIN_API_VERSION = 'v1';
 
 /**

@@ -13,6 +13,8 @@ import { getCalloutsFromCSS } from './css-parser';
 import StylesheetWatcher, { ObsidianStylesheet, SnippetStylesheet, ThemeStylesheet } from './css-watcher';
 import { ManageCalloutsPane } from './panes/manage-callouts-pane';
 import { ManagePluginPane } from './panes/manage-plugin-pane';
+import { PresetController } from './presets/preset-controller';
+import { presetLibraryToCSS } from './presets/style-presets';
 import Settings, { defaultSettings, migrateSettings } from './settings';
 
 export default class CalloutManagerPlugin extends Plugin {
@@ -28,6 +30,7 @@ export default class CalloutManagerPlugin extends Plugin {
 	private apiReadyWait = new Promise((resolve, reject) => (this.apiReadySignal = resolve as () => void));
 
 	public settingTab!: UISettingTab;
+	public presets!: PresetController;
 
 	/** @override */
 	public async onload() {
@@ -97,6 +100,10 @@ export default class CalloutManagerPlugin extends Plugin {
 		this.settingTab = new UISettingTab(this, () => new ManagePluginPane(this));
 		this.addSettingTab(this.settingTab);
 
+		// Register reusable preset editing, context menus, commands, and reading-view support.
+		this.presets = new PresetController(this);
+		this.presets.register();
+
 		// Register modal commands.
 		this.addCommand({
 			id: 'manage-callouts',
@@ -117,7 +124,27 @@ export default class CalloutManagerPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = migrateSettings(defaultSettings(), await this.loadData());
+		let data: unknown = await this.loadData();
+		let importedOfficial = false;
+		if (data == null && this.manifest.id === 'callout-manager-custom') {
+			const path = `${this.app.vault.configDir}/plugins/callout-manager/data.json`;
+			try {
+				if (await this.app.vault.adapter.exists(path)) {
+					data = JSON.parse(await this.app.vault.adapter.read(path));
+					importedOfficial = true;
+				}
+			} catch (error) {
+				console.warn('Callout Forge could not import the official plugin settings.', error);
+			}
+		}
+
+		this.settings = migrateSettings(defaultSettings(), data);
+		if (importedOfficial) {
+			this.settings.presets.officialImport = {
+				completed: true,
+				importedAt: new Date().toISOString(),
+			};
+		}
 	}
 
 	async saveSettings() {
@@ -318,6 +345,7 @@ export default class CalloutManagerPlugin extends Plugin {
 		for (const [id, settings] of Object.entries(this.settings.callouts.settings)) {
 			css.push(calloutSettingsToCSS(id, settings, env));
 		}
+		css.push(presetLibraryToCSS(this.settings.presets));
 
 		// Apply the CSS.
 		const stylesheet = css.join('\n\n');
