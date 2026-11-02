@@ -43,6 +43,17 @@ export function readCalloutTextBlock(content: string, headerLine: number): Callo
 	return { header, endLine, body: body.join('\n'), originalLines: lines.slice(headerLine, endLine) };
 }
 
+export function unwrapCalloutTextBlock(block: CalloutTextBlock): string[] {
+	const parentPrefix = '> '.repeat(Math.max(0, block.header.quoteDepth - 1));
+	const title = block.header.title.trim();
+	const lines = block.originalLines.slice(1).map((line) => {
+		const text = stripQuotePrefix(line, block.header.quoteDepth);
+		return text == null || text.length === 0 ? parentPrefix.trimEnd() : parentPrefix + text;
+	});
+	if (title.length > 0) lines.unshift(parentPrefix + title);
+	return lines;
+}
+
 export function replaceCalloutTextBlock(content: string, original: CalloutTextBlock, title: string, body: string): string {
 	const current = readCalloutTextBlock(content, original.header.line);
 	if (current == null || current.originalLines.length !== original.originalLines.length ||

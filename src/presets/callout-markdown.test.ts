@@ -8,6 +8,7 @@ import {
 	setCalloutStyleToken,
 	styleTokenFromHeader,
 	updateCalloutAtLine,
+	unwrapCalloutTextBlock,
 } from './callout-markdown';
 
 const TOKEN = 'cmc-p-0123456789abcdef';
@@ -72,5 +73,10 @@ describe('callout markdown', () => {
 		const block = readCalloutTextBlock(original, 0)!;
 		expect(() => replaceCalloutTextBlock('> [!note] Title\n> Newer body', block, 'Title', 'My edit'))
 			.toThrow('changed while you were editing');
+	});
+
+	test('None removes the callout and quote border while preserving its title and body', () => {
+		const block = readCalloutTextBlock('> [!note]- Heading\n> First line\n>\n> > Nested quote', 0)!;
+		expect(unwrapCalloutTextBlock(block)).toEqual(['Heading', 'First line', '', '> Nested quote']);
 	});
 });

@@ -2,7 +2,7 @@ import { Editor, MarkdownView, Menu, MenuItem, Modal, Notice, Setting, TFile, se
 
 import type CalloutManagerPlugin from '../main';
 
-import { CalloutHeader, locateCalloutAtLine, parseCalloutHeader, readCalloutTextBlock, replaceCalloutTextBlock, setCalloutStyleToken, styleTokenFromHeader } from './callout-markdown';
+import { CalloutHeader, locateCalloutAtLine, parseCalloutHeader, readCalloutTextBlock, replaceCalloutTextBlock, setCalloutStyleToken, styleTokenFromHeader, unwrapCalloutTextBlock } from './callout-markdown';
 import { CalloutTarget, PresetEditorModal } from './preset-editor-modal';
 import { PresetManagerModal } from './preset-manager-modal';
 import { PresetService } from './preset-service';
@@ -202,19 +202,27 @@ export class PresetController {
 				.setChecked(header.type === type && styleTokenFromHeader(header) == null)
 				.onClick(() => this.run(() => this.changeCalloutType(editor, header.line, type))));
 		}
-		const presets = orderedForMenu(this.service.library);
-		if (presets.length > 0) {
+		const customTypes = this.plugin.settings.callouts.custom.filter((type) => !builtInTypes.includes(type.toLowerCase()));
+		const savedStyles = orderedForMenu(this.service.library);
+		if (customTypes.length > 0 || savedStyles.length > 0) {
 			menu.addSeparator();
 			menu.addItem((item) => item.setTitle('My callouts').setIsLabel(true));
+			for (const type of customTypes) {
+				menu.addItem((item) => item.setTitle(type)
+					.setChecked(header.type === type && styleTokenFromHeader(header) == null)
+					.onClick(() => this.run(() => this.changeCalloutType(editor, header.line, type))));
+			}
 			const selectedPreset = presetIdFromMetadata(header.metadata.join(' '));
-			for (const preset of presets) this.addPresetMenuItem(menu, target, selectedPreset, preset);
+			for (const preset of savedStyles) this.addPresetMenuItem(menu, target, selectedPreset, preset);
 		}
 		menu.addSeparator();
-		menu.addItem((item) => item.setTitle('Other…').onClick(() => this.promptCalloutType(editor, header.line)));
 		menu.addItem((item) => item.setTitle('None').onClick(() => {
-			const current = locateCalloutAtLine(editor.getValue(), header.line);
-			if (current == null) return;
-			editor.setLine(current.line, `${current.prefix}${current.title}`);
+			const block = readCalloutTextBlock(editor.getValue(), header.line);
+			if (block == null) return;
+			const lastLine = block.endLine - 1;
+			const replacement = unwrapCalloutTextBlock(block).join('\n');
+			editor.replaceRange(replacement, { line: header.line, ch: 0 },
+				{ line: lastLine, ch: editor.getLine(lastLine).length });
 			editor.focus();
 		}));
 	}

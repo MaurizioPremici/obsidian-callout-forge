@@ -65,7 +65,8 @@ export class ManageCalloutsPane extends UIPane {
 	protected invalidate(): void {
 		const { plugin, viewOnly } = this;
 
-		this.searchFn = calloutSearch(plugin.callouts.values(), {
+		const visibleTypes = new Set(['note', 'tip', 'cite', 'info', 'danger']);
+		this.searchFn = calloutSearch(plugin.callouts.values().filter((callout) => visibleTypes.has(callout.id.toLowerCase())), {
 			preview: createPreviewFactory(viewOnly),
 		});
 
