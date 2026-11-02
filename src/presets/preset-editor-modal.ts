@@ -6,11 +6,8 @@ import {
 	CalloutStylePreset,
 	CalloutStyleValues,
 	applyInlineStyle,
-	bestContrastColor,
 	clonePreset,
-	contrastRatio,
 	createPreset,
-	defaultStyleValues,
 	normalizeHex,
 	normalizeStyleValues,
 } from './style-presets';
@@ -103,16 +100,6 @@ export class PresetEditorModal extends Modal {
 		const style = this.draft[scheme];
 
 		this.addColorSetting(editorEl, 'Background', style.background, (value) => (style.background = value));
-		this.addColorSetting(editorEl, 'Body foreground', style.foreground, (value) => (style.foreground = value));
-		this.addColorSetting(
-			editorEl,
-			'Title foreground',
-			style.titleForeground,
-			(value) => (style.titleForeground = value),
-		);
-		this.addColorSetting(editorEl, 'Accent', style.accent, (value) => (style.accent = value));
-		this.addColorSetting(editorEl, 'Border', style.border, (value) => (style.border = value));
-
 		new Setting(editorEl)
 			.setName('Background opacity')
 			.setDesc(`${Math.round(style.backgroundOpacity)}%`)
@@ -126,6 +113,15 @@ export class PresetEditorModal extends Modal {
 						this.refreshPreview();
 					}),
 			);
+		this.addColorSetting(editorEl, 'Body foreground', style.foreground, (value) => (style.foreground = value));
+		this.addColorSetting(
+			editorEl,
+			'Title foreground',
+			style.titleForeground,
+			(value) => (style.titleForeground = value),
+		);
+		this.addColorSetting(editorEl, 'Accent', style.accent, (value) => (style.accent = value));
+		this.addColorSetting(editorEl, 'Border', style.border, (value) => (style.border = value));
 
 		new Setting(editorEl)
 			.setName('Border width')
@@ -165,39 +161,6 @@ export class PresetEditorModal extends Modal {
 					}),
 			);
 
-		const ratio = contrastRatio(style.foreground, style.background);
-		const contrast = new Setting(editorEl)
-			.setName('Text contrast')
-			.setDesc(`${ratio.toFixed(2)}:1 — ${ratio >= 4.5 ? 'WCAG AA pass' : 'low contrast warning'}`)
-			.addButton((button) => {
-				button.setButtonText('Auto-correct').onClick(() => {
-					style.foreground = bestContrastColor(style.background);
-					style.titleForeground = style.foreground;
-					this.render();
-				});
-			});
-		if (ratio < 4.5) contrast.settingEl.addClass('calloutmanager-contrast-warning');
-
-		new Setting(editorEl)
-			.setName('Theme helpers')
-			.addButton((button) => {
-				button.setButtonText(scheme === 'light' ? 'Copy to dark' : 'Copy to light').onClick(() => {
-					this.draft[scheme === 'light' ? 'dark' : 'light'] = structuredClone(style);
-					this.render();
-				});
-			})
-			.addButton((button) => {
-				button.setButtonText('Generate variant').onClick(() => {
-					const destination = scheme === 'light' ? 'dark' : 'light';
-					const generated = defaultStyleValues(destination);
-					generated.accent = style.accent;
-					generated.border = style.border;
-					generated.foreground = bestContrastColor(generated.background);
-					generated.titleForeground = generated.foreground;
-					this.draft[destination] = generated;
-					this.render();
-				});
-			});
 	}
 
 	private addColorSetting(
@@ -362,10 +325,6 @@ declare const STYLES: `
 			font-weight: var(--font-semibold);
 			cursor: pointer;
 		}
-	}
-
-	.calloutmanager-contrast-warning .setting-item-description {
-		color: var(--text-warning);
 	}
 
 	.calloutmanager-hex-input {

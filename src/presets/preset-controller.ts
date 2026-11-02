@@ -136,7 +136,7 @@ export class PresetController {
 
 	private addRootMenuItem(menu: Menu): void {
 		menu.addItem((item) => {
-			item.setTitle('Callout styles')
+			item.setTitle('New callout style')
 				.setIcon('lucide-palette')
 				.setSection('callout')
 				.onClick(() => new PresetEditorModal(this.app, this.service, null).open());
