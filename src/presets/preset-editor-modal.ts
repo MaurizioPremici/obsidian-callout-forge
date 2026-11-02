@@ -2,7 +2,6 @@ import { App, ButtonComponent, Editor, Modal, Notice, Setting, TFile, setIcon } 
 
 import { PresetService } from './preset-service';
 import {
-	CALLOUT_PRESET_ICONS,
 	CalloutStylePreset,
 	CalloutStyleValues,
 	applyInlineStyle,
@@ -21,7 +20,6 @@ export type CalloutTarget =
 
 export class PresetEditorModal extends Modal {
 	private draft: CalloutStylePreset;
-	private saveAsFavorite: boolean;
 	private previewEl!: HTMLElement;
 	private previewIconEl!: HTMLElement;
 
@@ -34,7 +32,6 @@ export class PresetEditorModal extends Modal {
 	) {
 		super(app);
 		this.draft = preset == null ? createPreset('My callout style') : structuredClone(preset);
-		this.saveAsFavorite = preset == null ? true : this.service.library.favorites.includes(this.draft.id);
 	}
 
 	public onOpen(): void {
@@ -65,46 +62,21 @@ export class PresetEditorModal extends Modal {
 					});
 			});
 
-		new Setting(contentEl)
-			.setName('Favorite')
-			.setDesc('Keep this combination at the top of the callout menu.')
-			.addToggle((toggle) =>
-				toggle.setValue(this.saveAsFavorite).onChange((value) => (this.saveAsFavorite = value)),
-			);
-
-		contentEl.createEl('h3', { text: 'Icon' });
-		contentEl.createEl('p', {
-			text: 'Choose one of the 20 included Lucide icons. The accent color controls the icon color.',
-			cls: 'setting-item-description',
-		});
-		const iconGrid = contentEl.createDiv({ cls: 'calloutmanager-preset-icon-grid' });
-		for (const icon of CALLOUT_PRESET_ICONS) {
-			const button = iconGrid.createEl('button', {
-				attr: { type: 'button', 'aria-label': icon.label },
-				cls: this.draft.icon === icon.id ? 'is-selected' : '',
-			});
-			setIcon(button, icon.id);
-			button.createSpan({ text: icon.label });
-			button.addEventListener('click', () => {
-				this.draft.icon = icon.id;
-				this.render();
-			});
-		}
-
 		this.createPreview(contentEl);
-		this.renderSchemeEditor(contentEl, 'light');
 		this.renderSchemeEditor(contentEl, 'dark');
+		this.renderSchemeEditor(contentEl, 'light');
 		this.renderActions(contentEl);
 	}
 
 	private createPreview(container: HTMLElement): void {
 		container.createEl('h3', { text: 'Live preview' });
-		const previewHost = container.createDiv({ cls: 'calloutmanager-preset-preview-host theme-light' });
+		const previewHost = container.createDiv({ cls: 'calloutmanager-preset-preview-host theme-dark' });
 		const toolbar = previewHost.createDiv({ cls: 'calloutmanager-preset-preview-toolbar' });
 		toolbar.createSpan({ text: 'Preview theme:' });
 		const themeSelect = toolbar.createEl('select');
 		themeSelect.createEl('option', { text: 'Light', value: 'light' });
 		themeSelect.createEl('option', { text: 'Dark', value: 'dark' });
+		themeSelect.value = 'dark';
 		themeSelect.addEventListener('change', () => {
 			previewHost.toggleClass('theme-light', themeSelect.value === 'light');
 			previewHost.toggleClass('theme-dark', themeSelect.value === 'dark');
@@ -124,7 +96,7 @@ export class PresetEditorModal extends Modal {
 
 	private renderSchemeEditor(container: HTMLElement, scheme: 'light' | 'dark'): void {
 		const details = container.createEl('details', { cls: 'calloutmanager-preset-scheme' });
-		details.open = scheme === 'light';
+		details.open = false;
 		details.createEl('summary', { text: scheme === 'light' ? 'Light theme colors' : 'Dark theme colors' });
 		const editorEl = details.createDiv();
 		const style = this.draft[scheme];
@@ -137,7 +109,7 @@ export class PresetEditorModal extends Modal {
 			style.titleForeground,
 			(value) => (style.titleForeground = value),
 		);
-		this.addColorSetting(editorEl, 'Icon and accent', style.accent, (value) => (style.accent = value));
+		this.addColorSetting(editorEl, 'Accent', style.accent, (value) => (style.accent = value));
 		this.addColorSetting(editorEl, 'Border', style.border, (value) => (style.border = value));
 
 		new Setting(editorEl)
@@ -233,13 +205,20 @@ export class PresetEditorModal extends Modal {
 		value: string,
 		onChange: (value: string) => void,
 	): void {
-		new Setting(container).setName(name).addColorPicker((picker) => {
-			picker.setValue(value).onChange((nextValue) => {
-				const normalized = normalizeHex(nextValue);
-				if (normalized == null) return;
-				onChange(normalized);
-				this.refreshPreview();
-			});
+		const setting = new Setting(container).setName(name);
+		const updatePreview = (nextValue: string) => {
+			const normalized = normalizeHex(nextValue);
+			if (normalized == null) return;
+			onChange(normalized);
+			this.refreshPreview();
+		};
+		setting.addColorPicker((picker) => picker.setValue(value).onChange(updatePreview));
+		// The native picker emits input while it is open; Obsidian's onChange may wait until it closes.
+		setting.controlEl.addEventListener('input', (event) => {
+			const input = event.target;
+			if (input instanceof HTMLInputElement && input.type === 'color') {
+				updatePreview(input.value);
+			}
 		});
 	}
 
@@ -270,7 +249,7 @@ export class PresetEditorModal extends Modal {
 			.setButtonText(this.target == null ? 'Save preset' : 'Save and apply')
 			.setCta()
 			.onClick(async () => {
-				await this.service.savePreset(this.draft, this.saveAsFavorite);
+				await this.service.savePreset(this.draft);
 				await this.applyPreset(this.draft.id);
 				new Notice(`Preset “${this.service.getPreset(this.draft.id)?.name ?? this.draft.name}” saved.`);
 				this.onSaved?.();
@@ -323,26 +302,6 @@ export class PresetEditorModal extends Modal {
 declare const STYLES: `
 	.calloutmanager-preset-editor-modal {
 		--dialog-width: 760px;
-	}
-
-	.calloutmanager-preset-icon-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-		gap: var(--size-4-2);
-		margin-bottom: var(--size-4-5);
-
-		button {
-			display: flex;
-			align-items: center;
-			gap: var(--size-4-2);
-			justify-content: flex-start;
-			padding: var(--size-4-2);
-		}
-
-		button.is-selected {
-			background: var(--interactive-accent);
-			color: var(--text-on-accent);
-		}
 	}
 
 	.calloutmanager-preset-preview-host {

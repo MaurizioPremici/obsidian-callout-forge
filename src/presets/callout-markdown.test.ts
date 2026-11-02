@@ -2,6 +2,8 @@ import {
 	countStyleToken,
 	locateCalloutAtLine,
 	parseCalloutHeader,
+	readCalloutTextBlock,
+	replaceCalloutTextBlock,
 	replaceStyleToken,
 	setCalloutStyleToken,
 	styleTokenFromHeader,
@@ -55,5 +57,20 @@ describe('callout markdown', () => {
 		expect(countStyleToken(markdown, TOKEN)).toBe(2);
 		expect(countStyleToken(replaceStyleToken(markdown, TOKEN, null), TOKEN)).toBe(0);
 		expect(replaceStyleToken(markdown, TOKEN, null)).toContain('[!tip|other]');
+	});
+
+	test('edits only one callout text while preserving its type, metadata, fold and following note', () => {
+		const original = `Before\n> [!note|wide ${TOKEN}]- Old title\n> First\n>\n> > Nested text\n\nAfter`;
+		const block = readCalloutTextBlock(original, 1)!;
+		expect(block.body).toBe('First\n\n> Nested text');
+		expect(replaceCalloutTextBlock(original, block, 'New title', 'Changed\n\n> Nested text'))
+			.toBe(`Before\n> [!note|wide ${TOKEN}]- New title\n> Changed\n>\n> > Nested text\n\nAfter`);
+	});
+
+	test('refuses to overwrite a callout changed after editing began', () => {
+		const original = '> [!note] Title\n> Old body';
+		const block = readCalloutTextBlock(original, 0)!;
+		expect(() => replaceCalloutTextBlock('> [!note] Title\n> Newer body', block, 'Title', 'My edit'))
+			.toThrow('changed while you were editing');
 	});
 });

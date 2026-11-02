@@ -1,8 +1,8 @@
-import { Editor, MarkdownView, Menu, Modal, Notice, Setting, TFile, setIcon } from 'obsidian';
+import { Editor, MarkdownView, Menu, MenuItem, Modal, Notice, Setting, TFile, setIcon } from 'obsidian';
 
 import type CalloutManagerPlugin from '../main';
 
-import { locateCalloutAtLine, parseCalloutHeader, styleTokenFromHeader } from './callout-markdown';
+import { CalloutHeader, locateCalloutAtLine, parseCalloutHeader, readCalloutTextBlock, replaceCalloutTextBlock, setCalloutStyleToken, styleTokenFromHeader } from './callout-markdown';
 import { CalloutTarget, PresetEditorModal } from './preset-editor-modal';
 import { PresetManagerModal } from './preset-manager-modal';
 import { PresetService } from './preset-service';
@@ -28,6 +28,7 @@ export class PresetController {
 
 	public register(): void {
 		const { app, plugin } = this;
+		plugin.registerDomEvent(activeDocument, 'contextmenu', (event) => this.onRenderedEditorContextMenu(event), { capture: true });
 		plugin.registerEvent(
 			app.workspace.on('editor-menu', (menu, editor) => {
 				const header = locateCalloutAtLine(editor.getValue(), editor.getCursor().line);
@@ -38,7 +39,8 @@ export class PresetController {
 					line: editor.getCursor().line,
 					calloutType: header.type,
 				};
-				this.addRootMenuItem(menu, target, header.metadata.join(' '));
+				menu.addItem((item) => this.addTypeMenuItem(item, editor, header, target));
+				this.addRootMenuItem(menu);
 			}),
 		);
 
@@ -70,6 +72,7 @@ export class PresetController {
 		});
 
 		plugin.registerDomEvent(document, 'contextmenu', (event) => this.onReadingContextMenu(event), true);
+		plugin.registerDomEvent(document, 'dblclick', (event) => this.onReadingCalloutDoubleClick(event));
 		plugin.registerEvent(app.workspace.on('css-change', () => this.refreshRenderedCallouts()));
 
 		app.workspace.onLayoutReady(() => {
@@ -131,22 +134,116 @@ export class PresetController {
 		this.scanStyledCallouts(document);
 	}
 
-	private addRootMenuItem(menu: Menu, target: CalloutTarget, metadata: string): void {
+	private addRootMenuItem(menu: Menu): void {
 		menu.addItem((item) => {
-			item.setTitle('Callout colors and icon')
+			item.setTitle('Callout styles')
 				.setIcon('lucide-palette')
 				.setSection('callout')
-				.onClick((event) => {
-					const submenu = new Menu();
-					this.populatePresetMenu(submenu, target, metadata);
-					if (event instanceof MouseEvent) submenu.showAtMouseEvent(event);
-					else {
-						const element = event.target instanceof HTMLElement ? event.target : document.body;
-						const rect = element.getBoundingClientRect();
-						submenu.showAtPosition({ x: rect.right, y: rect.top });
-					}
-				});
+				.onClick(() => new PresetEditorModal(this.app, this.service, null).open());
 		});
+	}
+
+	private onRenderedEditorContextMenu(event: MouseEvent): void {
+		const origin = event.target instanceof Element ? event.target : null;
+		const target = origin?.closest<HTMLElement>('.callout');
+		if (target == null || origin?.closest('.markdown-source-view') == null) return;
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		const editor = view?.editor;
+		if (editor == null || editor.somethingSelected()) return;
+		const cm = (editor as Editor & { cm?: { posAtDOM?: (node: Node) => number; posAtCoords?: (coords: { x: number; y: number }) => number | null } }).cm;
+		let line: number | null = null;
+		try {
+			if (cm?.posAtDOM != null) line = editor.offsetToPos(cm.posAtDOM(target)).line;
+		} catch { /* Fall back to the click position. */ }
+		if (line == null && cm?.posAtCoords != null) {
+			const offset = cm.posAtCoords({ x: event.clientX, y: event.clientY });
+			if (offset != null) line = editor.offsetToPos(offset).line;
+		}
+		if (line == null) {
+			const stored = Number.parseInt(target.dataset.cmcLine ?? '', 10);
+			if (Number.isInteger(stored)) line = stored;
+		}
+		if (line == null) return;
+		const header = locateCalloutAtLine(editor.getValue(), line);
+		if (header == null) return;
+
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		const calloutTarget: CalloutTarget = { kind: 'editor', editor, line: header.line, calloutType: header.type };
+		const menu = new Menu();
+		menu.addItem((item) => item.setTitle('Edit').setIcon('lucide-pencil').onClick(() => {
+			editor.setCursor({ line: header.line, ch: editor.getLine(header.line).length });
+			editor.focus();
+		}));
+		menu.addItem((item) => this.addTypeMenuItem(item, editor, header, calloutTarget));
+		this.addRootMenuItem(menu);
+		menu.showAtMouseEvent(event);
+	}
+
+	private addTypeMenuItem(item: MenuItem, editor: Editor, header: CalloutHeader, target: CalloutTarget): void {
+		item.setTitle('Callout type').setIcon('lucide-list');
+		const submenu = (item as MenuItem & { setSubmenu?: () => Menu }).setSubmenu?.();
+		if (submenu == null) {
+			item.onClick((event) => {
+				const fallback = new Menu();
+				this.populateTypeMenu(fallback, editor, header, target);
+				if (event instanceof MouseEvent) fallback.showAtMouseEvent(event);
+			});
+			return;
+		}
+		this.populateTypeMenu(submenu, editor, header, target);
+	}
+
+	private populateTypeMenu(menu: Menu, editor: Editor, header: CalloutHeader, target: CalloutTarget): void {
+		const primary = ['note', 'abstract', 'info', 'important', 'todo', 'tip', 'success', 'question', 'warning', 'failure', 'danger', 'bug', 'example', 'quote'];
+		const available = [...new Set([...primary, ...this.plugin.callouts.keys(), header.type])];
+		for (const type of available) {
+			menu.addItem((item) => item
+				.setTitle(type.charAt(0).toUpperCase() + type.slice(1))
+				.setChecked(header.type === type && styleTokenFromHeader(header) == null)
+				.onClick(() => this.run(() => this.changeCalloutType(editor, header.line, type))));
+		}
+		const presets = orderedForMenu(this.service.library);
+		if (presets.length > 0) {
+			menu.addSeparator();
+			menu.addItem((item) => item.setTitle('My callouts').setIsLabel(true));
+			const selectedPreset = presetIdFromMetadata(header.metadata.join(' '));
+			for (const preset of presets) this.addPresetMenuItem(menu, target, selectedPreset, preset);
+		}
+		menu.addSeparator();
+		menu.addItem((item) => item.setTitle('Other…').onClick(() => this.promptCalloutType(editor, header.line)));
+		menu.addItem((item) => item.setTitle('None').onClick(() => {
+			const current = locateCalloutAtLine(editor.getValue(), header.line);
+			if (current == null) return;
+			editor.setLine(current.line, `${current.prefix}${current.title}`);
+			editor.focus();
+		}));
+	}
+
+	private promptCalloutType(editor: Editor, line: number): void {
+		const modal = new Modal(this.app);
+		modal.titleEl.setText('Other callout type');
+		let requested = '';
+		new Setting(modal.contentEl).setName('Type ID').addText((text) => {
+			text.setPlaceholder('custom-type').onChange((value) => (requested = value.trim().toLowerCase()));
+		});
+		new Setting(modal.contentEl).addButton((button) => button.setButtonText('Apply').setCta().onClick(() => {
+			if (!/^[a-z0-9_-]+$/u.test(requested)) {
+				new Notice('Use letters, numbers, hyphens, or underscores.');
+				return;
+			}
+			this.changeCalloutType(editor, line, requested);
+			modal.close();
+		}));
+		modal.open();
+	}
+
+	private changeCalloutType(editor: Editor, line: number, type: string): void {
+		const header = locateCalloutAtLine(editor.getValue(), line);
+		if (header == null) return;
+		const clean = setCalloutStyleToken(header.lineText, null);
+		editor.setLine(header.line, clean.replace(/(\[!)[^\]|]+/u, `$1${type}`));
+		editor.focus();
 	}
 
 	private populatePresetMenu(menu: Menu, target: CalloutTarget, metadata: string): void {
@@ -241,8 +338,69 @@ export class PresetController {
 			calloutType: target.dataset.callout ?? 'note',
 		};
 		const menu = new Menu();
+		this.addRootMenuItem(menu);
+		menu.addSeparator();
 		this.populatePresetMenu(menu, calloutTarget, target.dataset.calloutMetadata ?? '');
 		menu.showAtMouseEvent(event);
+	}
+
+	private onReadingCalloutDoubleClick(event: MouseEvent): void {
+		const origin = event.target instanceof Element ? event.target : null;
+		if (origin?.closest('a, button, input, textarea, [contenteditable="true"], .calloutmanager-inline-editor') != null) return;
+		const target = origin?.closest<HTMLElement>('.markdown-reading-view .callout');
+		if (target == null || target.hasClass('calloutmanager-inline-editing')) return;
+		const sourcePath = target.dataset.cmcSourcePath;
+		const line = Number.parseInt(target.dataset.cmcLine ?? '', 10);
+		const file = sourcePath == null ? null : this.app.vault.getAbstractFileByPath(sourcePath);
+		if (!(file instanceof TFile) || !Number.isInteger(line)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		void this.openReadingTextEditor(target, file, line);
+	}
+
+	private async openReadingTextEditor(target: HTMLElement, file: TFile, line: number): Promise<void> {
+		try {
+			const original = readCalloutTextBlock(await this.app.vault.read(file), line);
+			if (original == null || !target.isConnected ||
+				original.header.type.toLowerCase() !== (target.dataset.callout ?? '').toLowerCase()) return;
+			target.addClass('calloutmanager-inline-editing');
+			const editorEl = target.createDiv({ cls: 'calloutmanager-inline-editor' });
+			const titleInput = editorEl.createEl('input', { attr: { type: 'text', 'aria-label': 'Callout title', placeholder: 'Callout title' } });
+			titleInput.value = original.header.title.trim();
+			const bodyInput = editorEl.createEl('textarea', { attr: { 'aria-label': 'Callout text', placeholder: 'Callout text' } });
+			bodyInput.value = original.body;
+			bodyInput.rows = Math.max(3, Math.min(18, original.body.split('\n').length + 1));
+			const actions = editorEl.createDiv({ cls: 'calloutmanager-inline-actions' });
+			const cancel = actions.createEl('button', { text: 'Cancel', attr: { type: 'button' } });
+			const save = actions.createEl('button', { text: 'Save', cls: 'mod-cta', attr: { type: 'button' } });
+			const close = () => {
+				editorEl.remove();
+				target.removeClass('calloutmanager-inline-editing');
+			};
+			const persist = async () => {
+				save.disabled = true;
+				try {
+					await this.app.vault.process(file, (current) =>
+						replaceCalloutTextBlock(current, original, titleInput.value, bodyInput.value));
+					close();
+				} catch (error) {
+					save.disabled = false;
+					this.showError(error);
+				}
+			};
+			cancel.addEventListener('click', close);
+			save.addEventListener('click', () => void persist());
+			editorEl.addEventListener('keydown', (keyEvent) => {
+				if (keyEvent.key === 'Escape') { keyEvent.preventDefault(); close(); }
+				else if (keyEvent.key === 'Enter' && (keyEvent.metaKey || keyEvent.ctrlKey)) {
+					keyEvent.preventDefault();
+					void persist();
+				}
+			});
+			titleInput.focus();
+		} catch (error) {
+			this.showError(error);
+		}
 	}
 
 	private scanStyledCallouts(root: ParentNode): void {
@@ -360,6 +518,49 @@ function collectCallouts(el: HTMLElement): HTMLElement[] {
 }
 
 declare const STYLES: `
+	/* Dracula colors all Markdown quote tokens green, including callout text in edit mode. */
+	.theme-dark .markdown-source-view.mod-cm6 .cm-quote {
+		color: #D3D6DE !important;
+		-webkit-text-fill-color: #D3D6DE !important;
+	}
+	.callout.calloutmanager-inline-editing > .callout-title,
+	.callout.calloutmanager-inline-editing > .callout-content {
+		display: none;
+	}
+	.calloutmanager-inline-editor {
+		display: flex;
+		flex-direction: column;
+		gap: var(--size-4-2);
+		padding: var(--size-4-3);
+	}
+	.calloutmanager-inline-editor input,
+	.calloutmanager-inline-editor textarea {
+		width: 100%;
+		box-sizing: border-box;
+		font: inherit;
+		color: var(--text-normal);
+		background: var(--background-primary);
+	}
+	.theme-dark .calloutmanager-inline-editor input,
+	.theme-dark .calloutmanager-inline-editor textarea {
+		color: #D3D6DE !important;
+		-webkit-text-fill-color: #D3D6DE;
+		caret-color: #D3D6DE;
+	}
+	.theme-dark .calloutmanager-inline-editor input::selection,
+	.theme-dark .calloutmanager-inline-editor textarea::selection {
+		color: #fff;
+		background: var(--interactive-accent);
+	}
+	.calloutmanager-inline-editor textarea {
+		min-height: 100px;
+		resize: vertical;
+	}
+	.calloutmanager-inline-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--size-4-2);
+	}
 	.calloutmanager-menu-swatch {
 		display: inline-block;
 		width: 16px;

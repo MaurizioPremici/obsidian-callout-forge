@@ -19,6 +19,58 @@ export interface CalloutMutation {
 	changed: boolean;
 }
 
+export interface CalloutTextBlock {
+	header: CalloutHeader;
+	endLine: number;
+	body: string;
+	originalLines: string[];
+}
+
+export function readCalloutTextBlock(content: string, headerLine: number): CalloutTextBlock | null {
+	const lines = content.split('\n');
+	const header = parseCalloutHeader(lines[headerLine] ?? '', headerLine);
+	if (header == null) return null;
+	const body: string[] = [];
+	let endLine = headerLine + 1;
+	for (; endLine < lines.length; endLine += 1) {
+		const line = lines[endLine];
+		const unquoted = stripQuotePrefix(line, header.quoteDepth);
+		if (unquoted == null) break;
+		const nextHeader = parseCalloutHeader(line, endLine);
+		if (nextHeader != null && nextHeader.quoteDepth === header.quoteDepth) break;
+		body.push(unquoted);
+	}
+	return { header, endLine, body: body.join('\n'), originalLines: lines.slice(headerLine, endLine) };
+}
+
+export function replaceCalloutTextBlock(content: string, original: CalloutTextBlock, title: string, body: string): string {
+	const current = readCalloutTextBlock(content, original.header.line);
+	if (current == null || current.originalLines.length !== original.originalLines.length ||
+		current.originalLines.some((line, index) => line !== original.originalLines[index])) {
+		throw new Error('This callout changed while you were editing. Reopen it to avoid overwriting newer text.');
+	}
+	const { header } = current;
+	const metadata = header.metadata.length ? `|${header.metadata.join(' ')}` : '';
+	const cleanTitle = title.replace(/[\r\n]+/gu, ' ').trim();
+	const firstLine = `${header.prefix}[!${header.type}${metadata}]${header.fold}${cleanTitle ? ` ${cleanTitle}` : ''}`;
+	const cleanBody = body.replace(/\r\n?/gu, '\n');
+	const replacement = [firstLine, ...(cleanBody ? cleanBody.split('\n').map((line) => line ? header.prefix + line : header.prefix.trimEnd()) : [])];
+	const lines = content.split('\n');
+	lines.splice(header.line, original.originalLines.length, ...replacement);
+	return lines.join('\n');
+}
+
+function stripQuotePrefix(line: string, depth: number): string | null {
+	let offset = 0;
+	for (let level = 0; level < depth; level += 1) {
+		while (line[offset] === ' ' || line[offset] === '\t') offset += 1;
+		if (line[offset] !== '>') return null;
+		offset += 1;
+		if (line[offset] === ' ') offset += 1;
+	}
+	return line.slice(offset);
+}
+
 export function parseCalloutHeader(lineText: string, line = 0): CalloutHeader | null {
 	const match = CALLOUT_HEADER.exec(lineText);
 	if (match == null) return null;
