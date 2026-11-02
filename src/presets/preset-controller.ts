@@ -195,9 +195,8 @@ export class PresetController {
 	}
 
 	private populateTypeMenu(menu: Menu, editor: Editor, header: CalloutHeader, target: CalloutTarget): void {
-		const primary = ['note', 'abstract', 'info', 'important', 'todo', 'tip', 'success', 'question', 'warning', 'failure', 'danger', 'bug', 'example', 'quote'];
-		const available = [...new Set([...primary, ...this.plugin.callouts.keys(), header.type])];
-		for (const type of available) {
+		const builtInTypes = ['note', 'tip', 'cite', 'info', 'danger'];
+		for (const type of builtInTypes) {
 			menu.addItem((item) => item
 				.setTitle(type.charAt(0).toUpperCase() + type.slice(1))
 				.setChecked(header.type === type && styleTokenFromHeader(header) == null)

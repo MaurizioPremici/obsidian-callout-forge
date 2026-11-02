@@ -180,7 +180,7 @@ export class PresetManagerModal extends Modal {
 	}
 }
 
-class DeletePresetModal extends Modal {
+export class DeletePresetModal extends Modal {
 	public constructor(
 		app: App,
 		private readonly service: PresetService,

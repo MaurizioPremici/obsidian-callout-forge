@@ -1,5 +1,6 @@
 import { App, ButtonComponent, Editor, Modal, Notice, Setting, TFile, setIcon } from 'obsidian';
 
+import { DeletePresetModal, PresetManagerModal } from './preset-manager-modal';
 import { PresetService } from './preset-service';
 import {
 	CalloutStylePreset,
@@ -96,7 +97,7 @@ export class PresetEditorModal extends Modal {
 
 	private renderSchemeEditor(container: HTMLElement, scheme: 'light' | 'dark'): void {
 		const details = container.createEl('details', { cls: 'calloutmanager-preset-scheme' });
-		details.open = false;
+		details.open = scheme === 'dark';
 		details.createEl('summary', { text: scheme === 'light' ? 'Light theme colors' : 'Dark theme colors' });
 		const editorEl = details.createDiv();
 		const style = this.draft[scheme];
@@ -206,18 +207,40 @@ export class PresetEditorModal extends Modal {
 		onChange: (value: string) => void,
 	): void {
 		const setting = new Setting(container).setName(name);
+		let currentColor = normalizeHex(value) ?? value;
+		let hexInput: HTMLInputElement | null = null;
+		let colorInput: HTMLInputElement | null = null;
 		const updatePreview = (nextValue: string) => {
 			const normalized = normalizeHex(nextValue);
 			if (normalized == null) return;
+			currentColor = normalized;
 			onChange(normalized);
 			this.refreshPreview();
 		};
-		setting.addColorPicker((picker) => picker.setValue(value).onChange(updatePreview));
+		setting.addColorPicker((picker) => picker.setValue(value).onChange((nextValue) => {
+			updatePreview(nextValue);
+			if (hexInput != null) hexInput.value = currentColor.toUpperCase();
+		}));
+		colorInput = setting.controlEl.querySelector<HTMLInputElement>('input[type="color"]');
+		setting.addText((text) => {
+			text.setValue(currentColor.toUpperCase()).setPlaceholder('#B8BDC8').onChange((nextValue) => {
+				const normalized = normalizeHex(nextValue);
+				if (normalized == null) return;
+				updatePreview(normalized);
+				if (colorInput != null) colorInput.value = normalized;
+			});
+			hexInput = text.inputEl;
+			hexInput.addClass('calloutmanager-hex-input');
+			hexInput.addEventListener('blur', () => {
+				if (hexInput != null) hexInput.value = currentColor.toUpperCase();
+			});
+		});
 		// The native picker emits input while it is open; Obsidian's onChange may wait until it closes.
 		setting.controlEl.addEventListener('input', (event) => {
 			const input = event.target;
 			if (input instanceof HTMLInputElement && input.type === 'color') {
 				updatePreview(input.value);
+				if (hexInput != null) hexInput.value = currentColor.toUpperCase();
 			}
 		});
 	}
@@ -225,8 +248,19 @@ export class PresetEditorModal extends Modal {
 	private renderActions(container: HTMLElement): void {
 		const actions = container.createDiv({ cls: 'modal-button-container calloutmanager-preset-actions' });
 		new ButtonComponent(actions).setButtonText('Cancel').onClick(() => this.close());
+		new ButtonComponent(actions).setButtonText('Saved styles / delete').onClick(() => {
+			this.close();
+			new PresetManagerModal(this.app, this.service).open();
+		});
 
-		if (this.service.getPreset(this.draft.id) != null) {
+		const savedPreset = this.service.getPreset(this.draft.id);
+		if (savedPreset != null) {
+			new ButtonComponent(actions).setButtonText('Delete this style').setWarning().onClick(() => {
+				new DeletePresetModal(this.app, this.service, savedPreset, () => {
+					this.onSaved?.();
+					this.close();
+				}).open();
+			});
 			new ButtonComponent(actions).setButtonText('Duplicate').onClick(async () => {
 				const duplicate = clonePreset(this.draft, this.service.uniqueName(`${this.draft.name} copy`));
 				await this.service.savePreset(duplicate);
@@ -332,6 +366,11 @@ declare const STYLES: `
 
 	.calloutmanager-contrast-warning .setting-item-description {
 		color: var(--text-warning);
+	}
+
+	.calloutmanager-hex-input {
+		width: 8.5em;
+		font-family: var(--font-monospace);
 	}
 
 	.calloutmanager-preset-actions {
